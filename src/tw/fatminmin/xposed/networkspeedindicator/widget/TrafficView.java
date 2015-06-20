@@ -314,44 +314,45 @@ public final class TrafficView extends TextView {
 	private static final int TRANSMIT = 0;
 	private static final int RECEIVE = 1;
 	
-	private static final long getTotalBytes(final int traffic_direction) {
-		final boolean tx = (traffic_direction == TRANSMIT);
-		long totalBytes = -9; // not -1 because it conflicts with TrafficStats.UNSUPPORTED
+	private static long getBytes(String iface, boolean tx) throws IOException {
+		long result = 0;
 		BufferedReader br = null;
-		
 		try {
-			br = new BufferedReader(new FileReader("/sys/class/net/lo/statistics/" + (tx ? "tx" : "rx") + "_bytes"));
-			
-			// reading both together to reduce delay in between as much as possible
-			totalBytes = tx ? TrafficStats.getTotalTxBytes() : TrafficStats.getTotalRxBytes();
-			String line = br.readLine();
-			
-			long loBytes = Long.parseLong(line);
-			
-			Log.d(TAG, traffic_direction, " total: ", totalBytes, ", lo: ", loBytes);
-			
-			totalBytes = totalBytes - loBytes;
-			
+			br = new BufferedReader(new FileReader(String.format("/sys/class/net/%s/statistics/%s_bytes", iface, (tx ? "tx" : "rx"))));
+			result = Long.parseLong(br.readLine());
 		} catch (Exception e) {
-			Log.i(TAG, "Loopback exclusion failed: ", e);
-			
+			return 0;
 		} finally {
 			if (br != null) {
 				try {
 					br.close();
-				} catch (Exception e) {
-					// ignore
-				}
+				} catch (Exception e) {	/* ignore */ }
 			}
 		}
-		
+		return result;
+	}
+	
+	private static final long getTotalBytes(final int traffic_direction) {
+		final boolean tx = (traffic_direction == TRANSMIT);
+		long totalBytes = -9; // not -1 because it conflicts with TrafficStats.UNSUPPORTED
+		try {
+			long loBytes = getBytes("lo", tx);
+			long tunBytes = getBytes("tun0", tx);
+			totalBytes = tx ? TrafficStats.getTotalTxBytes() : TrafficStats.getTotalRxBytes();
+			Log.d(TAG, traffic_direction, " total: ", totalBytes, ", lo: ", loBytes, ", tun0: ", tunBytes);
+
+			totalBytes = totalBytes - loBytes - tunBytes;
+		} catch (Exception e) {
+			Log.i(TAG, "Loopback exclusion failed: ", e);
+
+		}
 		if (totalBytes == -9) {
 			totalBytes = tx ? TrafficStats.getTotalTxBytes() : TrafficStats.getTotalRxBytes();
 		}
-		
+
 		return totalBytes;
 	}
-
+	
 	private final String createText() {
 		String uploadSuffix, downloadSuffix;
 		String strUploadValue, strDownloadValue;
